@@ -190,19 +190,11 @@ if __name__=="__main__":
     search_vec_size = 64
     other_feat_size = 32
     label_path = "/Users/lizhenyu/PycharmProjects/YoutubeDNN/label.csv"
-    user_watch, user_search, user_feat, user_labels = prepare_movielens_test_data(0, 32, watch_vec_size, search_vec_size,
+    user_watch, user_search, user_feat, user_labels = prepare_movielens_data(0, 32, watch_vec_size, search_vec_size,
                                                                                   other_feat_size, 6040, label_path)
-    inputs = np.hstack((user_watch, user_search, user_feat))
-    file_uservector=open('user_vector.txt','w')
-    for user_vector in inputs:
-        vector=""
-        for i in user_vector.tolist():
-            vector=vector+str(i)+" "
-        file_uservector.write(vector+"\n")
-    file_userlabel = open('user_label.txt', 'w')
-    for user_label in user_labels:
-        file_userlabel.write(str(user_label.tolist()[0])+"\n")
-    file_userlabel.close()
-    file_uservector.close()
+    np.save('user_watch', user_watch)
+    np.save('user_search', user_search)
+    np.save('user_feat', user_feat)
+    np.save('user_labels', user_labels)
 
 

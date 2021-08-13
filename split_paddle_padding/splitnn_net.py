@@ -5,6 +5,7 @@ epoch = 30
 epsilon = 4.0
 eps = epsilon / epoch
 mean = torch.zeros(32, 128)
+least = torch.full((1, 128), 0.0001)
 
 class SplitNN(torch.nn.Module):
     def __init__(self, models, optimizers, data_owner):
@@ -17,7 +18,7 @@ class SplitNN(torch.nn.Module):
         super().__init__()
 
 
-    def forward(self, data_pointer):
+    def forward(self, data_pointer, imporEst):
         client_output = {}
         remote_outputs = []
         i = 0
@@ -25,20 +26,42 @@ class SplitNN(torch.nn.Module):
             if i == 0:
                 self.models[owner].to(device)
                 client_output[owner] = self.models[owner](data_pointer[owner].reshape([-1, 160]).to(device))
+                #'''
+                max_ = torch.max(client_output[owner], 0)[0]
+                min_ = torch.min(client_output[owner], 0)[0]
+                deltaF = torch.sub(max_, min_, alpha=1)
+
+                eps_separate = torch.add(torch.mul(imporEst, torch.full((1, 128), eps)), least)
+                noise_mul_separate = torch.div(deltaF, eps_separate)
+                #prevent zero
+                noise_mul_separate = torch.add(noise_mul_separate, least)
+                scale = torch.mul(torch.full((32, 128), 1), noise_mul_separate)
+                #print(scale)
+                '''
                 #calculate one normalization
                 one_norm = torch.norm(client_output[owner], p = 1, dim = 1)
                 #calculate sensitivity
                 sensitivity = (torch.amax(one_norm, dim = 0) - torch.amin(one_norm, dim = 0)).item()
                 #calculate noise multiplier
                 noise_mul = sensitivity / eps
+                if noise_mul == 0:
+                    noise_mul == 0.0001
                 scale = torch.full((32, 128), noise_mul)
+                '''
                 lap = Laplace(mean, scale)
                 #sample noise
                 noise = lap.sample()
                 #add noise
                 client_output[owner] = torch.add(client_output[owner], noise)
                 client_output[owner].to(device)
-                #print(client_output[owner].requires_grad)
+                value_list = [0, 1]
+                probability = [0.2, 0.8]
+                random_response = []
+                for i in range(128):
+                    temp = self.number_of_certain_probability(value_list, probability)
+                    random_response.append(temp)
+                random_response = torch.tensor(random_response)
+                client_output[owner] = torch.mul(client_output[owner], random_response)
                 remote_outputs.append(client_output[owner].requires_grad_().to(device))
                 i += 1
             else:
@@ -46,19 +69,11 @@ class SplitNN(torch.nn.Module):
                 client_output[owner] = self.models[owner](data_pointer[owner].reshape([-1, 160]).to(device))
                 client_output[owner].to(device)
                 remote_outputs.append(client_output[owner].requires_grad_())
-        #server_input = torch.min(remote_outputs[0],remote_outputs[1])
+        server_input = torch.min(remote_outputs[0],remote_outputs[1])
         #server_input = torch.cat(remote_outputs,1)
         #server_input = torch.max(remote_outputs[0],remote_outputs[1])
-        server_input = torch.add(remote_outputs[0],remote_outputs[1])
+        #server_input = torch.add(remote_outputs[0],remote_outputs[1])
         #server_input = torch.add(remote_outputs[0]/2, remote_outputs[1]/2)
-        value_list=[0,1]
-        probability=[0.3, 0.7]
-        random_response=[]
-        for i in range(128):
-            temp=self.number_of_certain_probability(value_list,probability)
-            random_response.append(temp)
-        random_response=torch.tensor(random_response)
-        server_input=torch.mul(server_input, random_response)
         self.models["server"].to(device)
         server_output = self.models["server"](server_input)
         return server_output
