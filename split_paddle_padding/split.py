@@ -251,6 +251,7 @@ def train_model(epoch, dataset):
         temp=data_test_acc(distributed_testloader, imporEst)
         res.append(temp)
         imporEst = F.normalize(importance_estimation(splitnn.models['client_1'], "client_1")[0], p=1, dim=-1)
+        #imporEst = F.normalize(torch.sqrt(importance_estimation(splitnn.models['client_1'], "client_1")[0]), p=1, dim=-1)
         #cal_auc_paddle(distributed_testloader)
         #print(imporEst)
 
@@ -259,7 +260,7 @@ def train_model(epoch, dataset):
 if __name__=="__main__":
     #'''
     res = []
-    for j in range(1):
+    for j in range(10):
         models = {
             "client_1": nn.Sequential(
                 nn.Linear(input_size[0], 128),
@@ -298,4 +299,5 @@ if __name__=="__main__":
     # importance_estimation(splitnn.models['client_1'], "client_1")
     # importance_estimation(splitnn.models['client_2'], "client_2")
     # importance_estimation(splitnn.models['server'], "server")
+    #'''
 

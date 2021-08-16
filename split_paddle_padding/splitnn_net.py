@@ -1,11 +1,11 @@
 import torch,random
 from torch.distributions.laplace import Laplace
+import numpy
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 epoch = 30
 epsilon = 4.0
 eps = epsilon / epoch
 mean = torch.zeros(32, 128)
-least = torch.full((1, 128), 0.0001)
 
 class SplitNN(torch.nn.Module):
     def __init__(self, models, optimizers, data_owner):
@@ -27,16 +27,28 @@ class SplitNN(torch.nn.Module):
                 self.models[owner].to(device)
                 client_output[owner] = self.models[owner](data_pointer[owner].reshape([-1, 160]).to(device))
                 #'''
+                client_output[owner].to(device)
                 max_ = torch.max(client_output[owner], 0)[0]
                 min_ = torch.min(client_output[owner], 0)[0]
                 deltaF = torch.sub(max_, min_, alpha=1)
+                deltaF_np = deltaF.detach().numpy()
 
-                eps_separate = torch.add(torch.mul(imporEst, torch.full((1, 128), eps)), least)
+                #prevent divide zero
+                eps_separate = torch.mul(imporEst, torch.full((1, 128), eps))
+                eps_separate_np = eps_separate.numpy()
+                for i in range(128):
+                    if eps_separate_np[0][i] == 0:
+                        eps_separate_np[0][i] = 0.0001
+                eps_separate = torch.from_numpy(eps_separate_np)
+                #calculate noise multiplier
                 noise_mul_separate = torch.div(deltaF, eps_separate)
-                #prevent zero
-                noise_mul_separate = torch.add(noise_mul_separate, least)
+                #prevent zero in variation
+                noise_mul_separate_np = noise_mul_separate.detach().numpy()
+                for i in range(128):
+                    if noise_mul_separate_np[0][i] == 0:
+                        noise_mul_separate_np[0][i] = 0.0001
+                noise_mul_separate = torch.from_numpy(noise_mul_separate_np)
                 scale = torch.mul(torch.full((32, 128), 1), noise_mul_separate)
-                #print(scale)
                 '''
                 #calculate one normalization
                 one_norm = torch.norm(client_output[owner], p = 1, dim = 1)
@@ -51,9 +63,14 @@ class SplitNN(torch.nn.Module):
                 lap = Laplace(mean, scale)
                 #sample noise
                 noise = lap.sample()
+                noise_np = noise.numpy()
+                for i in range(32):
+                    for j in range(128):
+                        if deltaF_np[j] == 0:
+                            noise_np[i][j] = 0
+                noise = torch.from_numpy(noise_np)
                 #add noise
                 client_output[owner] = torch.add(client_output[owner], noise)
-                client_output[owner].to(device)
                 value_list = [0, 1]
                 probability = [0.2, 0.8]
                 random_response = []
@@ -63,13 +80,14 @@ class SplitNN(torch.nn.Module):
                 random_response = torch.tensor(random_response)
                 client_output[owner] = torch.mul(client_output[owner], random_response)
                 remote_outputs.append(client_output[owner].requires_grad_().to(device))
+                #print(client_output[owner].requires_grad)
                 i += 1
             else:
                 self.models[owner].to(device)
                 client_output[owner] = self.models[owner](data_pointer[owner].reshape([-1, 160]).to(device))
                 client_output[owner].to(device)
                 remote_outputs.append(client_output[owner].requires_grad_())
-        server_input = torch.min(remote_outputs[0],remote_outputs[1])
+        server_input = torch.min(remote_outputs[0], remote_outputs[1])
         #server_input = torch.cat(remote_outputs,1)
         #server_input = torch.max(remote_outputs[0],remote_outputs[1])
         #server_input = torch.add(remote_outputs[0],remote_outputs[1])
